@@ -136,6 +136,84 @@ resource "aws_security_group" "web" {
   }
 }
 
+# Default security group
+resource "aws_security_group" "api" {
+  name        = "api"
+  description = "Used for api instance"
+  vpc_id      = "${aws_vpc.vpc_api.id}"
+
+  # SSH access from anywhere
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP access from the VPC
+  ingress {
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  # outbound internet access
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Worker security group
+resource "aws_security_group" "worker" {
+  name        = "worker"
+  description = "Used for worker instance"
+  vpc_id      = "${aws_vpc.vpc_api.id}"
+
+  # SSH access from anywhere
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # outbound internet access
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+
+# Cassandra security group
+resource "aws_security_group" "cassandra" {
+  name        = "cassandra"
+  description = "Used for cassandra instance"
+  vpc_id      = "${aws_vpc.vpc_api.id}"
+
+  # SSH access from anywhere
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # outbound internet access
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 # Nginx instance
 resource "aws_instance" "web" {
   # The connection block tells our provisioner how to
@@ -153,20 +231,12 @@ resource "aws_instance" "web" {
   # we specified
   ami = "${lookup(var.aws_amis, "cpu")}"
 
-  # The name of our SSH keypair we created above.
   key_name = "${aws_key_pair.auth.id}"
 
-  # Our Security group to allow HTTP and SSH access
   vpc_security_group_ids = ["${aws_security_group.web.id}"]
 
-  # We're going to launch into the same subnet as our ELB. In a production
-  # environment it's more common to have a separate private subnet for
-  # backend instances.
   subnet_id = "${aws_subnet.public_subnet_us-west-2a.id}"
 
-  # We run a remote provisioner on the instance after creating it.
-  # In this case, we just install nginx and start it. By default,
-  # this should be on port 80
   provisioner "remote-exec" {
     inline = [
       "sudo apt-get -y update",
@@ -176,3 +246,86 @@ resource "aws_instance" "web" {
   }
 }
 
+# Cassandra instance
+resource "aws_instance" "cassandra" {
+  # The connection block tells our provisioner how to
+  # communicate with the resource (instance)
+  connection {
+    # The default username for our AMI
+    user = "ubuntu"
+
+    # The connection will use the local SSH agent for authentication.
+  }
+
+  count = "1"
+
+  instance_type = "t2.large"
+
+  # Lookup the correct AMI based on the region
+  # we specified
+  ami = "${lookup(var.aws_amis, "cpu")}"
+
+  # The name of our SSH keypair we created above.
+  key_name = "${aws_key_pair.auth.id}"
+
+  # Our Security group to allow HTTP and SSH access
+  vpc_security_group_ids = ["${aws_security_group.api.id}"]
+
+  subnet_id = "${aws_subnet.private_2_subnet_us-west-2a.id}"
+}
+
+# Api Instance
+resource "aws_instance" "api" {
+  # The connection block tells our provisioner how to
+  # communicate with the resource (instance)
+  connection {
+    # The default username for our AMI
+    user = "ubuntu"
+
+    # The connection will use the local SSH agent for authentication.
+  }
+
+  count = "2"
+
+  instance_type = "t2.xlarge"
+
+  # Lookup the correct AMI based on the region
+  # we specified
+  ami = "${lookup(var.aws_amis, "cpu")}"
+
+  # The name of our SSH keypair we created above.
+  key_name = "${aws_key_pair.auth.id}"
+
+  # Our Security group to allow HTTP and SSH access
+  vpc_security_group_ids = ["${aws_security_group.api.id}"]
+
+  subnet_id = "${aws_subnet.private_1_subnet_us-west-2a.id}"
+}
+
+# Worker instance
+resource "aws_instance" "worker" {
+  # The connection block tells our provisioner how to
+  # communicate with the resource (instance)
+  connection {
+    # The default username for our AMI
+    user = "ubuntu"
+
+    # The connection will use the local SSH agent for authentication.
+  }
+
+  count = "2"
+
+  instance_type = "g2.2xlarge"
+
+  # Lookup the correct AMI based on the region
+  # we specified
+  ami = "${lookup(var.aws_amis, "gpu")}"
+
+  # The name of our SSH keypair we created above.
+  key_name = "${aws_key_pair.auth.id}"
+
+  # Our Security group to allow HTTP and SSH access
+  vpc_security_group_ids = ["${aws_security_group.worker.id}"]
+
+  subnet_id = "${aws_subnet.private_1_subnet_us-west-2a.id}"
+}
